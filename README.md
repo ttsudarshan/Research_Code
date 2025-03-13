@@ -1,1 +1,1 @@
-Please refer to acesspagecount for the main code.
+Please refer to accesspagecount for the main code.
