@@ -1,90 +1,93 @@
-//I combined the source code and my code to access the pages after allocating the memory where it will randomly display the
-//..10 accessed pages and keep updating the access conut untill we stop
-
-
-#include <iostream>
-#include <unordered_map>
-#include <cstdlib>
-#include <ctime>
-#include <thread>
-#include <chrono>
-#include <cstdio>
+#include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <string.h>
+#include <errno.h>
+#include <time.h>
 
-//My laptop cannot handle 7 gb so I cahnged it to 1 gb
-#define MEMORY_SIZE_GB 1
+#define PAGE_SIZE 4096  // 4KB pages
+#define NUM_TRACKED_PAGES 10  // Track 10 randomly chosen pages
 
-using namespace std;
-
-class Page_access_tracker {
-public:
-    Page_access_tracker() {
-        srand(time(0)); // Seed the random number generator
+void displayPageAccessInfo(char *memory, size_t total_pages, size_t *tracked_pages, int *access_count) {
+    unsigned char *vec = (unsigned char *)calloc(total_pages, sizeof(unsigned char));
+    if (!vec) {
+        perror("calloc failed");
+        return;
     }
 
-    void simulatePageAccess(int num_pages) {
-        while (true) {
-            int page_number = rand() % num_pages; // Randomly select a page number
-            page_access_count[page_number]++; // Increment access count for that page
-
-            this_thread::sleep_for(chrono::milliseconds(5)); // aceeses pages very 5 millisecnd
-        }
-    }
-
-    void displayAccessCounts() {
-        while (true) {
-            cout << "\nPage Access Counts (Updated):\n";
-            for (const auto &entry : page_access_count) {
-                cout << "Page " << entry.first << " was accessed " << entry.second << " times" << endl;
+    while (1) {
+        if (mincore(memory, total_pages * PAGE_SIZE, vec) == 0) {
+            printf("\n=== Page Access Summary (Every 5 sec) ===\n");
+            for (size_t i = 0; i < NUM_TRACKED_PAGES; i++) {
+                size_t page_index = tracked_pages[i];
+                if (vec[page_index] & 1) {
+                    access_count[i]++;
+                    printf("Page %zu (Real Address: %p) Accessed %d times\n",
+                           page_index, (void *)&memory[page_index * PAGE_SIZE], access_count[i]);
+                }
             }
-
-            // Sleep for 5 seconds before updating the display again
-            this_thread::sleep_for(chrono::seconds(5));
+        } else {
+            perror("mincore failed");
         }
+        sleep(5);
+    }
+    free(vec);
+}
+
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        printf("Usage: %s <memory_size_in_GB>\n", argv[0]);
+        return 1;
     }
 
-private:
-    unordered_map<int, int> page_access_count;
-};
+    int mem_size_gb = atoi(argv[1]);
+    if (mem_size_gb <= 0) {
+        printf("Invalid memory size.\n");
+        return 1;
+    }
 
-// Memory allocation function (from your provided code)
-void allocateMemory(int gb) {
-    int i, j;
-    int scss = 0;
-    int fail = 0;
+    printf("Allocating %d GB of memory...\n", mem_size_gb);
+    
+    size_t total_pages = (mem_size_gb * 256 * 1024);
+    char *memory = (char *)mmap(NULL, total_pages * PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (memory == MAP_FAILED) {
+        perror("Memory allocation failed");
+        return 1;
+    }
 
-    printf("Allocating: %d GB\n", gb);
+    int success = 0, fail = 0;
 
-    for (i = 0; i < 256 * 1024 * gb; i++) {
-        char *ptr = (char *)malloc(4096);
+    // Access all allocated pages
+    for (size_t i = 0; i < total_pages; i++) {
+        char *ptr = &memory[i * PAGE_SIZE];
         if (!ptr) {
             fail++;
         } else {
-            for (j = 0; j < 4096; j++) {
-                ptr[j] = 'a'; // Simulate usage of the allocated memory
-            }
-            scss++;
+            memset(ptr, 'a', PAGE_SIZE);  // Access memory to bring it into RAM
+            success++;
         }
     }
 
-    printf("Allocation Success: %d, Allocation Failures: %d\n", scss, fail);
-}
+    printf("Success: %d, Failed: %d\n", success, fail);
 
-int main() {
-    //Allocate memory
-    allocateMemory(MEMORY_SIZE_GB);
+    // Randomly select 10 pages to track
+    srand(time(NULL));
+    size_t tracked_pages[NUM_TRACKED_PAGES];
+    int access_count[NUM_TRACKED_PAGES] = {0};  // Initialize access counts to zero
+    for (size_t i = 0; i < NUM_TRACKED_PAGES; i++) {
+        tracked_pages[i] = rand() % total_pages;
+    }
 
-    //Start tracking page accesses
-    Page_access_tracker tracker;
+    printf("\nTracking %d Random Pages for Access Frequency:\n", NUM_TRACKED_PAGES);
+    for (size_t i = 0; i < NUM_TRACKED_PAGES; i++) {
+        printf("Tracking Page %zu (Address: %p)\n", tracked_pages[i], (void *)&memory[tracked_pages[i] * PAGE_SIZE]);
+    }
 
-    // Start the page access simulation in a separate thread -
-    thread access_thread(&Page_access_tracker::simulatePageAccess, &tracker, 10);
-    //10 is the random pages it selects and keeps track of 
+    // Start tracking accessed pages
+    displayPageAccessInfo(memory, total_pages, tracked_pages, access_count);
 
-    tracker.displayAccessCounts();
-
-
-    access_thread.join();
-    
+    // Cleanup (this point will never be reached in the infinite loop)
+    munmap(memory, total_pages * PAGE_SIZE);
     return 0;
 }
