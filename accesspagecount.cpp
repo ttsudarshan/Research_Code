@@ -77,7 +77,7 @@ int main() {
     //Start tracking page accesses
     Page_access_tracker tracker;
 
-    // Start the page access simulation in a separate thread
+    // Start the page access simulation in a separate thread -
     thread access_thread(&Page_access_tracker::simulatePageAccess, &tracker, 10);
     //10 is the random pages it selects and keeps track of 
 
