@@ -21,6 +21,8 @@ int main(int argc, char **argv)
 		{
 			for(j=0;j<4090;j++)
 				ptr[j]='a';
+			for(j=0;j<4090;j++)
+				char _tmp = ptr[j];
 			sccss++;
 		}
 
